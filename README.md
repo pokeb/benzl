@@ -183,7 +183,7 @@ A few simple examples:
 
     ; Attempts to include and evaluate the contents of 'my-benzl-module.benzl'
     ; Requiring the same file again will not evaluate it again
-    require("sample/my-benzl-module")
+    (require "sample/my-benzl-module")
 
     ; Evaluates the passed expression and prints out how long it took
     (profile (expensive-function x y z))
