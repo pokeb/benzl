@@ -33,13 +33,13 @@ A few simple examples:
     ; Define a list
     (def {l} (list 1 2 3 4 5))
 
-    ; Reverse sort list
+    ; Returns a reverse sorted copy of the list
     (rsort l)
 
-    ; Split list in two after 2nd item
+    ; Splits the original list in two and returns the halves in a new list
     (split-at 2 (list 1 2 3 4))
 
-    ; Remove 2nd and 3rd items, replace with "hello"
+    ; Returns a new list with the 2nd and 3rd items replaced with "hello"
     (splice 1 2 "hello" (list 1 2 3 4 5))
 
 ### Buffers
@@ -60,7 +60,7 @@ A few simple examples:
     (def {b3} (read-file "/Users/ben/Desktop/myfile.txt"))
 
     ; Cast the buffer to a string
-    (def {s} (to-string b3))
+    (to-string b3)
 
 ### Dictionaries (untyped collection of keys and values)
 
@@ -103,13 +103,13 @@ A few simple examples:
 
     ; Conditionals
     if (> x 1)
-        {printf "% is greater than 1"}
-        {printf "% is not greater than 1"}
+        {printf "% is greater than 1" x}
+        {printf "% is not greater than 1" x}
 
     ; logical operators (and/or/not)
     if (and (>= x 2) (<= x 5))
-        {printf "% is between 2 and 5"}
-        {printf "% is not between 2 and 5"}
+        {printf "% is between 2 and 5" x}
+        {printf "% is not between 2 and 5" x}
 
     ; Multi-case if
     (cond
@@ -139,7 +139,7 @@ A few simple examples:
     ; Throwing errors
     ; Uncaught errors stop evaluation
     (fun {my-func x y} {
-        if ((type-of x) (type-of y))
+        if (== (type-of x) (type-of y))
             {+ x y}
             {error "x and y must be the same type!"}
     })
@@ -157,10 +157,10 @@ A few simple examples:
     ; Defining functions
     (def {add} (lambda {x} {+ x 1}))
 
-    ; Short form for defining a named functions
+    ; Short form for defining a named function
     (fun {add-one x} {+ x 1})
 
-    ; Same thing with type specifier
+    ; Same thing with a type specifier
     (fun {add-one-alt x:Float} {+ x 1})
 
     ; Higher-order functions
@@ -170,7 +170,7 @@ A few simple examples:
     (filter (lambda {x} {!= x "a"}) "baba")
 
     ; ...and buffers too
-    (map (lambda {x:Byte} {* x 0x02}) (buffer-with-bytes 0x01 0x02 0x03)
+    (map (lambda {x:Byte} {* x 0x02}) (buffer-with-bytes 0x01 0x02 0x03))
 
     ; buffer-map is a specialised map function for buffers
     ; This code reads 4 bytes at once
