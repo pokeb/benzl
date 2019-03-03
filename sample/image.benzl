@@ -1,0 +1,96 @@
+#!/usr/local/bin/benzl
+
+; A simple program that renders an image and saves it to a .BMP file
+; benzl has no built-in image support, so all the hard work is implemented
+; in benzl (see bitmap.benzl, rgba-color.benzl, geometry.benzl)
+;
+; Part of benzl -> https://github.com/pokeb/benzl
+
+; This module includes the Image type and functions for working with images
+(require "bitmap.benzl")
+
+; This module includes the Color type and functions for working with colours
+(require "rgba-color.benzl")
+
+; This module includes types and functions for working with points and shapes
+(require "geometry.benzl")
+
+; Create some nice colours
+(def {dark-orange} (Color r:128 g:64 b:0 a:255))
+(def {orange} (Color r:255 g:192 b:0 a:255))
+(def {yellow} (Color r:255 g:255 b:0 a:255))
+(def {light-blue} (Color r:192 g:192 b:255 a:255))
+(def {blue} (Color r:96 g:96 b:255 a:255))
+(def {red} (Color r:255 g:64 b:64 a:255))
+
+; Create some cool shapes
+(def {right-eye} (Circle center:(Point x:72 y:40) radius:7))
+(def {left-eye} (Circle center:(Point x:28 y:40) radius:7))
+(def {face} (Circle center:(Point x:50 y:50) radius:41))
+(def {outline} (Circle center:(Point x:50 y:50) radius:45))
+(def {mouth} (Circle center:(Point x:50 y:70) radius:15))
+(def {mouth-mask} (Rectangle origin:(Point x:0 y:0) size:(Size width:100 height: 67)))
+(def {tongue} (Circle center:(Point x:50 y:70) radius:11))
+(def {tongue-mask} (Rectangle origin:(Point x:0 y:0) size:(Size width:100 height: 74)))
+
+; Renders a happy face to the passed image
+; Rather than rendering the shapes one after another with overdraw,
+; we'll just see which shape we intersect with and render that to speed things up
+(fun {render-image image:Image} {
+
+    ; This function maps the pixels in the image
+    ; For each pixel, we simply return a new colour
+    (map-pixels image (lambda {pixel pnt} {
+        (do
+            ; We defined our shapes for a 100x100 image
+            ; This will scale our point to whatever size we are using
+            (def {p} (scale-point pnt (/ 100.0 (image width))))
+            (select
+                ; Render left and right eyes
+                {(or (circle-contains-point right-eye p) (circle-contains-point left-eye p))
+                    dark-orange
+                }
+                ; Render tongue
+                {(and (not (rectangle-contains-point tongue-mask p)) (circle-contains-point tongue p))
+                    red
+                }
+                ; Render mouth
+                {(and (not (rectangle-contains-point mouth-mask p)) (circle-contains-point mouth p))
+                    dark-orange
+                }
+                ; Render face with radial gradient
+                {(circle-contains-point face p)
+                    (mix-colors
+                        yellow
+                        orange
+                        (/ (squared-distance-between-points p (face center)) (square (face radius)))
+                    )
+                }
+
+                ; Render outline
+                {(circle-contains-point outline p)
+                    dark-orange
+                }
+                ; This pixel is outside of the face
+                {else
+                    (mix-colors light-blue blue (/ (p y) (image height)))
+                }
+            )
+        )
+    }))
+})
+
+
+(printf "Rendering an image to 'benzl-test.bmp'")
+(printf "benzl is pretty slow so this may take a few seconds...")
+
+; We will use this how long it takes to render the image
+(def {start-time} (cpu-time-since 0))
+
+; Create an image, render the face, and write the result to a file in BMP format
+(write-file "benzl-test.bmp" (bmp-data-for-image (render-image (create-image 200 200))))
+
+; Calculate how much CPU time benzl wasted
+(def {end-time} (cpu-time-since start-time))
+
+(printf "Rendered benzl-test.bmp in % seconds" (/ end-time 1000.0))

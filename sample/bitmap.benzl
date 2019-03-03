@@ -1,0 +1,121 @@
+; A simple module for working with bitmapped images, and writing them to BMP files
+;
+; Part of benzl -> https://github.com/pokeb/benzl
+
+; This module includes the Color type and functions for working with colours
+(require "rgba-color.benzl")
+
+; This module includes types and functions for working with points and shapes
+(require "geometry.benzl")
+
+; Defines a custom type for a bitmapped image
+(def-type {Image width:Integer height:Integer pixels:Buffer})
+
+; Defines a function that creates an image and allocates a RGBA buffer for it
+(fun {create-image w:Integer h:Integer} {
+    (Image width:w height:h pixels:(create-buffer (* w h 4)))
+})
+
+; Returns the byte offset of a pixel in an image
+(fun {byte-offset-for-point image:Image point:Point} {
+    (* (+ (point x) (* (- (image height) (point y) 1) (image width))) 4)
+})
+
+; Defines a function to set the colour of a pixel in an image
+(fun {set-pixel image:Image point:Point color:Color} {
+    (set-prop {image pixels}
+        (put-unsigned-integer
+            (image pixels)
+            (byte-offset-for-point image point)
+            (color-to-bytes color)
+        )
+    )
+})
+
+; Defines a function to get the colour of a pixel in an image
+(fun {get-pixel image:Image point:Point} {
+    (color-from-bytes
+        (get-unsigned-integer
+            (image pixels)
+            (byte-offset-for-point image point)
+        )
+    )
+})
+
+; Rather than looping over the pixels directly, we can this function to map the buffer
+; and have the passed function provide a new value for each 4-byte RGBA pixel
+(fun {map-pixels image:Image func:Function} {
+
+    ; buffer-map is a built-in function that lets you iterate over a buffer n bytes at a time
+    ; We could use the map function in the standard library instead
+    ; but this function is a lot faster because doesn't keep copying the buffer,
+    ; and we can use it to ask for 4 bytes at once
+    (set-prop {image pixels} (buffer-map (image pixels) 4 (lambda {pixel index} {
+
+        ; Turn the colour supplied by the function into an RGBA value
+        ; and return it to buffer-map
+        (color-to-bytes
+
+            ; Call the map function
+            (func
+
+                ; Get the current colour of the pixel to pass to the function
+                (color-from-bytes (get-unsigned-integer pixel 0))
+
+                ; Get x,y coords to pass to the function
+                (Point x:(% index (image width)) y:(- (image height) 1 (/ index (image width))))
+            )
+        )
+    })))
+})
+
+; Defines a function to generate a RGBA BMP for the passed image
+(fun {bmp-data-for-image image:Image} {
+    (do
+        ; I found this link to have the simplest explanation of the basic
+        ; BMP file format:
+        ; http://paulbourke.net/dataformats/bmp/
+        ;
+        ; Wikipedia explains the variations on this format
+        ; https://en.wikipedia.org/wiki/BMP_file_format
+        ; This code uses the v3 format (with a BITMAPV3INFOHEADER)
+        ; As we want our output images to have an alpha channel
+
+        (def {pixel-data-size} (* (image width) (image height) 4))
+        (def {header-size} 14) ; size of BITMAPFILEHEADER
+        (def {info-header-size} 56) ; size of BITMAPV3INFOHEADER
+        (def {total-header-size} (+ header-size info-header-size)) ; size of both headers
+        (def {total-size} (+ total-header-size pixel-data-size)) ; total size of file
+
+        ; Create a buffer that is the exact size of our final BMP image
+        (def {buf} (create-buffer total-size))
+
+        ; Writes the BITMAPFILEHEADER
+        (set {buf} (put-unsigned-short buf 0 0x4D42)) ; BMP type magic string
+        (set {buf} (put-unsigned-integer buf 2 total-size)) ; Size of file
+        (set {buf} (put-unsigned-integer buf 10 total-header-size)) ; Offset of pixel data
+
+        ; Writes the BITMAPINFOHEADER
+        (set {buf} (put-unsigned-integer buf 14 info-header-size)) ; Size of BITMAPV3INFOHEADER
+        (set {buf} (put-signed-integer buf 18 (image width))) ; Width in pixels
+        (set {buf} (put-signed-integer buf 22 (image height))) ; Height in pixels
+        (set {buf} (put-unsigned-short buf 26 1)) ; Number of planes
+        (set {buf} (put-unsigned-short buf 28 32)) ; Bits per pixel
+        (set {buf} (put-unsigned-integer buf 30 3)) ; Compression (We use BI_BITFIELDS to indicate RGBA data)
+        (set {buf} (put-unsigned-integer buf 34 pixel-data-size)) ; Pixel data size
+        (set {buf} (put-signed-integer buf 38 1000)) ; X Pixels per meter
+        (set {buf} (put-signed-integer buf 42 1000)) ; Y Pixels per meter
+
+        ; Writes the only BITMAPV3INFOHEADER bits we actually need
+        (set {buf} (put-unsigned-integer buf 54 0xFF000000)) ; Red mask
+        (set {buf} (put-unsigned-integer buf 58 0x00FF0000)) ; Green mask
+        (set {buf} (put-unsigned-integer buf 62 0x0000FF00)) ; Blue mask
+        (set {buf} (put-unsigned-integer buf 66 0x000000FF)) ; Alpha mask
+
+        ; Write the pixel data after the header
+        (set {buf} (put-bytes buf 70 (image pixels))) ; write the pixel data
+
+        ; Return the BMP data
+        (buf)
+    )
+})

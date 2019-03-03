@@ -1,0 +1,8 @@
+.DS_Store
+.vscode
+src/benzl-stdlib.h
+sample/benzl-test.bmp
+sample/todos.db
+output.data
+*.xcodeproj
+/benzl

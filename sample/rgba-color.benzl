@@ -1,0 +1,40 @@
+; A simple module that defines a type for working with RGBA colours
+; and some helpful colour-related functions
+;
+; Part of benzl -> https://github.com/pokeb/benzl
+
+; Defines a custom type representing a colour
+(def-type {Color r:Byte g:Byte b:Byte a:Byte})
+
+; Defines a function for mixing two colours
+; (mix-colors (Color r:255 g:0 b:0 255) (Color r:0 g:0 b:255 255) 1) -> Red
+; (mix-colors (Color r:255 g:0 b:0 255) (Color r:0 g:0 b:255 255) 0.5) -> Purple
+; (mix-colors (Color r:255 g:0 b:0 255) (Color r:0 g:0 b:255 255) 1) -> Blue
+(fun {mix-colors c1:Color c2:Color amount:Float} {
+    (do
+        (fun {mix-color-component c1:Byte c2:Byte amount:Float} {
+            (+ (* c1 (- 1.0 amount)) (* c2 amount))
+        })
+        (Color
+            r: (mix-color-component (c1 r) (c2 r) amount)
+            g: (mix-color-component (c1 g) (c2 g) amount)
+            b: (mix-color-component (c1 b) (c2 b) amount)
+            a: (mix-color-component (c1 a) (c2 a) amount)
+        )
+    )
+})
+
+; Defines a function that turns a colour into 4 bytes, one for each component
+(fun {color-to-bytes color:Color} {
+    (| (color a) (<< (color b) 8) (<< (color g) 16) (<< (color r) 24))
+})
+
+; Turns 4 bytes into a color
+(fun {color-from-bytes color:Integer} {
+    (Color
+        r:(>> (& color 0xFF000000) 24)
+        g:(>> (& color 0x00FF0000) 16)
+        b:(>> (& color 0x0000FF00) 8)
+        a:(& color 0x000000FF)
+    )
+})

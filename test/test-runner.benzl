@@ -1,0 +1,132 @@
+
+; A simple testing framework for benzl
+; It provides a set of assert functions to run tests, printing the result of each test,
+; And the 'test-result-summary' function to print a summary at the end
+
+; This type will store the number of tests we have run, number passed/failed
+; And the start time for profiling
+(def-type {TestResults executed:Integer passed:Integer failed:Integer start-time:Float})
+
+; Instance of the above type for storing test stats
+(def {results} (TestResults executed:0 passed:0 failed:0 start-time:(cpu-time-since 0)))
+
+; TL;DR summary of test results
+(fun {test-happiness-indicator r:TestResults} {
+    if (== (r passed) (r executed)) {"😀"} {"😥"}
+})
+
+; Returns longer summary of the passed test results
+(fun {test-result-summary r:TestResults} {
+    format "% Executed % tests (% passed / % failed) in %ms"
+        (test-happiness-indicator r)
+        (r executed) (r passed) (r failed)
+        (cpu-time-since (r start-time))
+})
+
+; This is the core function for running tests
+; It records success or failure for a test and prints a summary for the test
+(fun {assert cond desc res time} {
+    do
+        (set-prop {results executed} (+ (results executed) 1))
+        (if (cond)
+            {do
+                (set-prop {results passed} (+ (results passed) 1))
+                (printf "[PASS] (%ms) %" time desc)
+                true
+            }
+            {do
+                (set-prop {results failed} (+ (results failed) 1))
+                (printf "[FAIL] (%ms) % Got: '%'" time desc res)
+                false
+            }
+        )
+})
+
+; This helper function evaluates the passed string as benzl code
+; It will return the result, or a CaughtError if one occurred
+(fun {eval-or-catch __cond} {
+    (try {eval-string __cond} {catch e {e}})
+})
+
+; Helper function to escape line breaks in the passed string
+(fun {esc r} {
+    if (is-string r)
+        {replace "\n" "\\n" r}
+        {r}
+})
+
+; Helper function to evalulate an expression
+; and return the result and how long it took
+(fun {prof x} {
+    (do
+        (def {st} (cpu-time-since 0))
+        (def {res} (eval-or-catch x))
+        (def {tt} (cpu-time-since st))
+        (dict result:res time:tt)
+    )
+})
+
+; Test function to check two expressions are equal
+(fun {assert-equal x y} {
+    (do
+        (def {r} (prof x))
+        (assert (== (r result) y) (format "% == '%'" (esc x) (esc y)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check two expressions are not equal
+(fun {assert-not-equal x y} {
+    (do
+        (def {r} (prof x))
+        (assert (!= (r result) y) (format "% != '%'" (esc x) (esc y)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check x > y
+(fun {assert-greater-than x y} {
+    (do
+        (def {r} (prof x))
+        (assert (> (r result) y) (format "% > '%'" (esc x) (esc y)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check x < y
+(fun {assert-less-than x y} {
+    (do
+        (def {r} (prof x))
+        (assert (< (r result) y) (format "% < '%'" (esc x) (esc y)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check x is almost equal to y (used for Float comparisons)
+(fun {assert-almost-equal x y} {
+    (do
+        (def {r} (prof x))
+        (def {diff} (abs (- (r result) y)))
+        (assert (<= diff 0.001) (format "% ≈ '%'" (esc x) (esc y)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check expression returns true
+(fun {assert-true x} {
+    (do
+        (def {r} (prof x))
+        (assert (== (r result) true) (format "% == true" (esc x)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check expression returns false
+(fun {assert-false x} {
+    (do
+        (def {r} (prof x))
+        (assert (== (r result) false) (format "% == false" (esc x)) (esc (r result)) (r time))
+    )
+})
+
+; Test function to check the expression throws an error
+(fun {assert-error x} {
+    (do
+        (def {r} (prof x))
+        (assert (== (type-of (r result)) Error) (format "% should throw an error" (esc x)) (esc (r result)) (r time))
+    )
+})

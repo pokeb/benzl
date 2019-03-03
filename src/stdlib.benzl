@@ -1,0 +1,731 @@
+
+(def {nil} {})
+(def {true} 1)
+(def {false} 0)
+
+; Alias for load
+(def {require} load)
+
+; Unpack list for function
+; eg: (unpack my-func {1 2 3}) => (my-func 1 2 3)
+(fun {unpack f:Function l:List} {
+    eval (join (list f) l)
+})
+
+; Pack list for function
+; eg: (pack my-func 1 2 3) => (my-func (list 1 2 3))
+(fun {pack f:Function & l} {
+        eval {f l}
+})
+
+; Aliases for pack+unpack
+(def {curry} unpack)
+(def {uncurry} pack)
+
+; Open new scope
+(fun {let b} {
+    ((lambda {_} b) ())
+})
+
+; Internally used by other functions for joining stuff together
+; Handles the fact that when joining lists we probably need to wrap
+; items to join in a list to prevent the end result becoming a string/buffer
+; (depends on the contents)
+(fun {join-func v} {
+    if (is-string-or-buffer v)
+        {lambda {x} {x}}
+        {lambda {x} {list x}}
+})
+
+; Perform several things in sequence
+; eg: do (def {x} 1) (set {x} (+ x 1)) x) => 2
+(fun {do & things} {
+    if (== things nil)
+        {nil}
+        {last things}
+})
+
+; Compose two functions that each take 1 argument
+; eg: (compose func-1 func-2 arg) => (func-1 (func-2 arg))
+; {compose (lambda {x} {* x 5}) (lambda {x} {* x 2}) 2 } => 20
+(fun {compose f1:Function f2:Function a} {
+    f1 (f2 a)
+})
+
+; split a list or string at nth item/character
+; eg: (split-at 2 {1 2 3 4 5 6}) => {{1 2 3} {4 5 6}}
+; eg: (split-at 2 "hello") => {"he" "lo"}
+(fun {split-at n:Integer l} {
+    if (is-list-or-string-or-buffer l)
+        {list (take n l) (drop n l)}
+        {error (format "Second argument to function 'split-at' must be a list, string or buffer (Got: '%')" l)}
+})
+
+
+; split-at the list at n
+; eg: (split-by 4 {1 2 3 4 5 6}) => {{1 2 3} {5 6}}
+; eg: (split-by "," "1,2,3") => {"1" "2" "3"}
+(fun {split-by v l} {
+    if (is-list-or-string-or-buffer l)
+        {do
+            (def {idx} (index-of v l))
+            (if (or (== idx -1) (== (len l) 0))
+                {list l}
+                {join (list (take idx l)) (split-by v (drop (+ idx 1) l))})
+        }
+        {error (format "Second argument to function 'split-by' must be a list, string or buffer (Got: '%')" l)}
+})
+
+(fun {rep-len x} {
+    if (is-list-or-string-or-buffer x)
+        {len x}
+        {1}
+})
+
+; Replace a with b in list, string or buffer
+; (replace 1 2 {1 2 1}) => {2 2 2}
+; (replace "a" "b" "abca") => "bbca"
+; (replace 0x00 0xFF (buffer-with-bytes 0x00 0x01 0x00)) => (0xFF 0x01 0xFF)
+(fun {replace a b l} {
+    if (== l nil)
+        {nil}
+        {do
+            (def {idx} (index-of a l))
+            (if (== idx -1)
+                {l}
+                {join (take idx l) (join b (replace a b (drop (+ idx (rep-len a)) l)))}
+            )
+        }
+})
+
+
+; List contains element
+; eg: (contains "foo" {"boo" "foo" "choo"}) => true
+(fun {contains x l} {
+    if (or (== l nil) (== (len l) 0))
+        {false}
+        {if (== x (first l))
+            {true}
+            {contains x (tail l)}
+        }
+})
+
+; Perform a function on every item in a list and return the results
+; as a new list
+; eg: (map (lambda {x} {+ x 1}) {1 2 3}) => {2 3 4}
+(fun {map f:Function l} {
+    (do
+        (fun {map-int f f2 l} {
+            if (or (== l nil) (== (len l) 0))
+                {nil}
+                {join (f2 (f (first l))) (map-int f f2 (tail l))}
+        })
+        (map-int f (join-func l) l)
+    )
+})
+
+; Perform a function on every item in a list and return the results
+; as a new list
+; eg: (map-with-iterator (lambda {x i} {printf "%:%" i x}) {"a" "b" "c"}) => "0:a\n1:b\n2:c"
+(fun {map-with-iterator f:Function l} {
+    (do
+        (fun {map-int f f2 l i} {
+            if (or (== l nil) (== (len l) 0))
+                {nil}
+                {join (f2 (f (first l) i)) (map-int f f2 (tail l) (+ i 1))}
+        })
+        (map-int f (join-func l) l 0)
+    )
+})
+
+; Perform a function on every item in a list if it returns true
+; for a given item, add it to the list to return
+; eg: (filter (lambda {x} {> 2}) {1 2 3 4 5 4 3 2 1}) => {3 4 5 4 3}
+(fun {filter f:Function l} {
+    (reduce (lambda {acc x} {if (f x) {join acc x} {acc}}) (empty-object-of-type l) l)
+})
+
+; Reduce the passed list to a single value
+; Starting with an initial accumulator (acc) value, this performs the passed function
+; in the form (func accumulator item-in-list)
+; and returns the final value of the accumulator
+; eg: (reduce (lambda {acc x} {+ acc x}) 10 {1 2 3 4 5}) => 25
+(fun {reduce func:Function acc list} {
+    if (or (== list nil) (== (len list) 0))
+        {acc}
+        {reduce func (func acc (first list)) (tail list)}
+})
+
+(fun {empty-object-of-type x} {
+    case (type-of x)
+        {String ""}
+        {Buffer (create-buffer 0)}
+        {List {}}
+})
+
+; Reverse the list, string or buffer
+; eg: (reverse {1 2 3}) => {3 2 1}
+(fun {reverse l} {
+    reduce (lambda {acc x} {join x acc}) (empty-object-of-type l) l
+})
+
+
+(fun {index-of-strg a lst} {
+    (do
+        (def {lst_len} (len a))
+        (fun {io-from start} {
+            (do
+                (if (> (+ start lst_len) (len lst))
+                    {-1}
+                    {if (== a (slice start lst_len lst))
+                        {start}
+                        {io-from (+ start 1)}
+                    }
+                )
+            )
+        })
+        (if (== lst nil)
+            {nil}
+            {io-from 0})
+    )
+})
+
+(fun {index-of-lst a lst} {
+    (do
+        (fun {io-from start} {
+            (do
+                (if (>= start (len lst))
+                    {-1}
+                    {if (== a (nth start lst))
+                        {start}
+                        {io-from (+ start 1)}
+                    }
+                )
+            )
+        })
+        (if (== lst nil)
+            {nil}
+            {io-from 0})
+    )
+})
+
+; Returns in the index of the first occurance of the value in the list
+; or -1
+; eg: (index-of "a" {"b" "a" "a" "b"}) => 1
+(fun {index-of a lst} {
+    if (is-string lst)
+        {if (is-string a)
+            {index-of-strg a lst}
+            {error  (format "The first argument for 'index-of' must be a string if the second argument is a string (Got: '%' '%')" a lst)}
+        }
+        {index-of-lst a lst}
+})
+
+; Returns false if the passed range is completely inside the list,
+; true otherwise
+; eg: (out-of-range 5 1 {1 2 3}) => true
+; (out-of-range 0 2 {1 2 3}) => false
+(fun {out-of-range start:Integer length:Integer lst} {
+    or (< start 0) (> (+ start length) (len lst))
+})
+
+; Returns part of a list
+; eg: (slice 1 2 {0 1 2 3 4 5}) => {1 2}
+(fun {slice start:Integer length:Integer lst} {
+    if (== lst nil)
+        {error "Slice: Missing list parameter"}
+        {if (out-of-range start length lst)
+            {error (format "Slice: index %,% out of range in %" start length lst)}
+            {take length (drop start lst)}
+        }
+})
+
+; Returns a new list with a range replaced with the passed value
+; eg: (splice 1 2 "hello" {1 2 3 4 5}) => {1 "hello" 4 5}
+(fun {splice start:Integer length:Integer repl lst} {
+    if (== lst nil)
+        {error "Splice: Missing list parameter"}
+        {if (out-of-range start length lst)
+            {error (format "Splice: index %,% out of range in %" start length lst)}
+            {join
+                (take start lst) ; First part of list
+                (if (== repl nil) ; Item to insert
+                    {nil}
+                    {(join-func repl) repl}
+                )
+                (drop (+ start length) lst) ; end of the list
+            }
+        }
+})
+
+; Returns a sorted list
+; (sort {4 3 2 5 1}) => {1 2 3 4 5}
+(fun {sort l} {
+    if (or (== l nil) (== (len l) 0))
+        {nil}
+        {if (is-list l)
+            {if (== (len l) 1)
+                {l}
+                {do
+                    (def {lowest} (min l)) ; Lowest item in list
+                    (def {lowest-index} (index-of lowest l)) ; First index of same
+                    ; Make a new list
+                    (join
+                        ; with the lowest item as the first item
+                        (list lowest)
+                        ; and then recursively do the same for the rest
+                        (sort (splice lowest-index 1 nil l))
+                    )
+                }
+            }
+            {error (format "Function 'sort requires a single list argument (Got '%')" l)}
+        }
+})
+
+; Returns a list sorted in reverse
+; eg: (sort {4 3 2 5 1}) => {5 4 3 2 1}
+(fun {rsort l} {
+    reverse (sort l)
+})
+
+; For implementing multiple conditions
+; eg:
+; (select
+;   {(== 1 0) 1}
+;   {(== 2 0) 2}
+;   {else 3}
+; ) => 3
+(fun {select & l} {
+    if (== l nil)
+        {error "No Selection Found"}
+        {if (first (first l))
+            {second (first l)}
+            {unpack select (tail l)}
+        }
+})
+
+(fun {case x & cs} {
+    if (== cs nil)
+        {error "No case found!"}
+        {if (== x (first (first cs))) {second (first cs)} {
+            unpack case (join (list x) (tail cs))}}
+})
+
+; Perform a function n times
+; Passing the index to the function
+; eg: (loop 10 (lambda {x} {print x}))
+(fun {loop n:Integer f:Function} {
+    (do
+        (fun {loop-internal i} {
+            if (== n i)
+                {nil}
+                {do (f i) (loop-internal (+ i 1))}
+        })
+        (loop-internal 0)
+    )
+})
+
+
+
+; Aliases for select / else
+(def {cond} select)
+(def {else} true)
+
+; Pads a string or list to a given length
+; eg: (pad 7 "o" "hello") => "hellooo"
+; eg: (pad 5 0 {1 2 3}) => {1 2 3 0 0}
+(fun {pad wanted-length:Integer pad-with to-pad} {
+    if (>= (len to-pad) wanted-length)
+        {to-pad}
+        {pad wanted-length pad-with (join to-pad pad-with)}
+})
+
+; Removes trailing spaces
+(fun {rtrim s:String} {
+    if (== (last s) " ")
+        {rtrim (take (- (len s) 1) s)}
+        {s}
+})
+
+; Removes leading spaces
+(fun {ltrim s:String} {
+    if (== (first s) " ")
+        {ltrim (tail s)}
+        {s}
+})
+
+; Removes leading and trailing spaces
+(fun {trim s:String} {
+    (rtrim (ltrim s))
+})
+
+
+; Wraps a string into muliple lines after max-line-len characters
+; (wrap 10 "The quick brown fox jumps over the lazy dog") => "The quick \nbrown fox \njumps over \nthe lazy \ndog"
+; (wrap 5 "bits\n  stuffthings") => "bits\n  st-\nufft-\nhings"
+
+; FIXME: Mostly works but needs urgent makeover...
+
+(fun {wrap max-line-len:Integer string:String} {
+    (do
+        (def {output:String} "")
+        (fun {process-character char:String char-num:Integer} {
+            ; If it's a space
+            if (== char " ")
+
+                ; If we're at the start of a line, or the current word is not empty
+                ; Add the space to the current line
+                ; This check stops spaces from previous lines from wrapping to the next line
+                ; While allowing spaces that actually appeared at the start of the line
+                ; (eg those used for indentation) to be included
+                {if (or (== at-line-start false) (> current-word-len 0))
+                    ; If we add this space, will it fit?
+                    {if (<= (+ current-line-len current-word-len 1) max-line-len)
+
+                        ; Yes - add the current word and the space to the line
+                        {set {current-line current-word current-word-len current-line-len}
+                            (join current-line current-word " ") "" 0 (+ current-line-len current-word-len 1)}
+
+                        ; No - Add the current word to the line and ignore the space
+                        {set {current-line current-word current-word-len current-line-len}
+                            (join current-line current-word) "" 0 (+ current-line-len current-word-len)}
+                    }
+                    ; Ignore this space
+                    {}
+                }
+                {do
+                    ; If the current word won't fit on this line
+                    ; wrap, appending the current line to the new string
+                    (if (> (+ current-line-len current-word-len 1) max-line-len)
+                        {set {output current-line current-line-len} (join output current-line "\n") "" 0}
+                        {}
+                    )
+                    ; If we add this character, will it completely fill the line?
+                    (if (== (+ current-word-len 1) max-line-len)
+
+                        ; Is the next character is a space
+                        {if (or (if (> (len line) (+ char-num 1)) {== (nth (+ char-num 1) line) " "} {false}) (== line-len (- char-num 1)))
+
+                            ; Add this character and wrap
+                            {set {output current-line current-word current-line-len current-word-len at-line-start} (join output current-word char "\n") "" "" 0 0 false}
+
+                            ; Add a hyphen to indicate we have wrapped a word in the middle
+                            ; and move this character to the next line
+                            {set {output current-line current-word current-line-len current-word-len at-line-start} (join output current-word "-" "\n") "" char 0 1 true}
+                        }
+
+                        ; This character will fit without filling the line
+                        ; Add it to the current word
+                        {set {current-word current-word-len at-line-start} (join current-word char) (+ current-word-len 1) true}
+                    )
+                }
+        })
+        (fun {process-line line:String} {
+            (do
+                (def {line-len:Integer} (len line))
+                (if (<= (line-len) max-line-len)
+
+                    ; Line already fits, just use as-is
+                    {set {output} (join output line "\n")}
+
+                    ; Line doesn't fit and will need to be wrapped
+                    {do
+
+                        (def {current-line:String} "")
+                        (def {current-word:String} "")
+                        (def {current-line-len:Integer} 0)
+                        (def {current-word-len:Integer} 0)
+                        (def {at-line-start:Integer} false)
+
+                        ; Loop through all characters in the line
+                        (map-with-iterator process-character line)
+
+                        ; Add any leftovers (line and word) to the new string
+                        (set {output} (join output current-line current-word "\n"))
+                    }
+                )
+            )
+
+        })
+
+        ; Split the string by hard-coded line breaks
+        ; and process each line
+        (map process-line (split-by "\n" string))
+
+        ; Trim the extra line break at the end
+        (slice 0 (- (len output) 1) output)
+    )
+})
+
+; Rounds a number
+; eg: (round 1.4) => 1
+; (round 1.7) => 2
+; (round 1.5) => 1
+(fun {round num} {
+    if (is-number num)
+        {if (> (- (ceil num) num) (- num (floor num)))
+            {floor num}
+            {ceil num}
+        }
+        {error (format "Function 'round' takes a single number argument (Got: '%')" num)}
+})
+
+; Converts a float to an integer
+; eg: (to-integer 1.5) => 1
+; (to-intger -1.5) => -1
+(fun {to-integer num:Float} {
+    if (< num 0)
+        {ceil num}
+        {floor num}
+})
+
+; Converts an integer to a float
+; eg: (to-float 1) => 1.0
+(fun {to-float x:Integer} {
+    if (is-number x)
+        {+ x 0.0}
+        {error (format "Function 'to-float' takes a single number argument (Got: '%')" x)}
+})
+
+; Squares a number
+; eg: (square 2) => 4
+(fun {square x} {
+    if (is-number x)
+        {* x x}
+        {error (format "Function 'square' takes a single number argument (Got: '%')" x)}
+})
+
+; Cubes a number
+; eg: (cube 2) => 8
+(fun {cube x} {
+    if (is-number x)
+        {* x x x}
+        {error (format "Function 'cube' takes a single number argument (Got: '%')" x)}
+
+})
+
+; Computes the mean of the passed numbers
+; eg: (average 2 8) => 5
+(fun {average x & y} {
+    (/ (curry + (join (list x) y)) (+ (len y) 1))
+})
+
+; Returns true if x is an integer or float
+; eg: (is-number 4) => true
+; eg: (is-number "You are number 6.") => false
+(fun {is-number x} {
+    or (== (type-of x) Float) (== (type-of x) Integer) (== (type-of x) Byte)
+})
+
+(fun {is-string x} {== (type-of x) String})
+(fun {is-list x} {== (type-of x) List})
+
+; Returns true if x is an integer or float
+; eg: (is-list-or-string-or-buffer "hello") => true
+; eg: (is-list-or-string-or-buffer {1 2 3}) => true
+; eg: (is-list-or-string-or-buffer (create-buffer 1)) => true
+; eg: (is-list-or-string-or-buffer 6) => false
+(fun {is-list-or-string-or-buffer x} {
+    or (== (type-of x) List) (== (type-of x) String) (== (type-of x) Buffer)
+})
+
+(fun {is-string-or-buffer x} {
+    or (== (type-of x) String) (== (type-of x) Buffer)
+})
+
+; Makes a number positive
+; (abs -1) => 1
+(fun {abs x} {
+    if (not (is-number x))
+        {error (format "Function 'abs' takes a single number (Got: % '%')" (type-of x) x)}
+        {if (< x 0) {- x} {x}}
+})
+
+; Measures the time taken to evaluate the passed expression,
+; prints it out, and returns the result
+; eg: (profile (+ 2 2)) =>
+; "Result: 4
+;  (Took 0.005ms)"
+; 4 <- return value
+(fun {profile exp} {
+    (do
+        (def {start-time} (cpu-time-since 0))
+        (def {result} (eval exp))
+        (def {elapsed-time} (cpu-time-since start-time))
+        (printf "Evaluated % in %ms " exp elapsed-time)
+        result
+    )
+})
+
+; Obligatory SICP sample
+(fun {sqrt x} {
+    (do
+        (fun {good-enough guess} {
+            (< (abs (- (square guess) x)) 0.001)
+        })
+        (fun {improve guess} {
+            (average guess (/ x guess))
+        })
+        (fun {sqrt-iter guess} {
+            if (good-enough guess)
+                {guess}
+                {sqrt-iter (improve guess)}
+        })
+        (sqrt-iter 1.0)
+    )
+})
+
+(fun {about} {
+    (version)
+})
+(fun {info} {
+    (version)
+})
+(fun {quit} {
+    (exit 0)
+})
+
+(fun {help} {
+    (do
+        (def {screen-width} (min 100 (max (list 50 (first (console-size))))))
+        (def {desc-width} (floor (* screen-width 0.525)))
+        (def {code-width} (- screen-width desc-width 4))
+        (printf "Code w: %" code-width)
+
+        (fun {divider} {
+            (printf "%" (pad screen-width "-" "-"))
+        })
+        (fun {title txt} {
+            do
+            (printf "\n\n%" txt)
+            (divider)
+        })
+        (fun {example desc code} {
+            (do
+                (def {desc-lines} (split-by "\n" (wrap desc-width desc)))
+                (def {code-lines} (split-by "\n" (wrap code-width code)))
+                (def {max-lines} (max (len desc-lines) (len code-lines)))
+                (loop max-lines (lambda {i} {
+                    (do
+                        (def {d} (if (> (len desc-lines) i){nth i desc-lines}{""}))
+                        (def {c} (if (> (len code-lines) i){nth i code-lines}{""}))
+                        (printf "%    %" (pad desc-width " " d) c)
+                    )
+                }))
+                (divider)
+            )
+        })
+
+        (printf "\n")
+        (printf "Things to try:")
+        (title "Basic mathematical operations")
+        (example "Add two numbers:" "(+ 2 2)")
+        (example "Subtract two numbers:" "(- 10 2)")
+        (example "Divide two numbers:" "(/ 99.999 3)")
+        (example "Multiply three numbers:" "(* 10 10 8)")
+        (example "Get the remainder of a division:" "(% 10 6)")
+        (example "Get the lowest item:" "(min 8 16 14 32 5 31)")
+        (example "Get the highest item:" "(max 8 16 14 32 5 31)")
+        (example "Round a number:" "(round 10.75)")
+        (example "Floor a number:" "(floor 10.75)")
+        (example "Ceil a number:" "(ceil 10.25)")
+        (example "Square a number:" "(square 10.25)")
+        (example "Approximate the square root:" "(sqrt 105)")
+
+        (title "Strings and printing things out")
+        (example "Define a string:" "\"hello\"")
+        (example "Get the length of a string:" "(len \"hello\")")
+        (example "Join two strings:" "(join \"hello\" \"there\")")
+        (example "Alternate syntax to join two strings:" "(+ \"hello\" \"there\")")
+        (example "Print a string:" "(print \"hello\")")
+        (example "Print two strings:" "(print \"hello\" \"there\")")
+        (example "Formatted print:" "(printf \"'%' and '%'\" \"one\" \"two\")")
+
+        (title "Working with lists (most of these work on strings too!)")
+        (example "Define a list:" "(list 1 2 3 4 5)")
+        (example "Alternate syntax to define a line:" "{1 2 3 4 5}")
+        (example "Get the first item from the list:" "(first {1 2 3 4 5}))")
+        (example "Get the last item from the list:" "(last {1 2 3 4 5}))")
+        (example "Get the fourth item:" "(nth 4 {1 2 3 4 5}))")
+        (example "Get the first 3 items from the list:" "(take 3 {1 2 3 4 5}))")
+        (example "Get the middle 3 items from the list:" "(slice 1 3 {1 2 3 4 5}))")
+        (example "Replace the middle item with the number seven:" "(splice 2 1 7 {1 2 3 4 5}))")
+        (example "Split a list in two at index:" "(split-at 2 {\"a\" \"b\" \"c\" \"d\"}))")
+        (example "Split a list in two at value:" "(split-at \"c\" {\"a\" \"b\" \"c\" \"d\"}))")
+        (example "Is the list haunted?" "(contains \"ghost\" {\"box\" \"ghost\" \"ball\"}))")
+        (example "Get the index of an item in the list:" "(index-of {\"ghost\" {\"box\" \"ghost\" \"ball\"}))")
+        (example "Get the lowest item in the list:" "(min {5 2 1 3 4})")
+        (example "Get the highest item in the list:" "(max {5 2 1 3 4})")
+        (example "Reverse the list:" "(reverse {1 2 3 4 5})")
+        (example "Sort the list:" "(sort {\"c\" \"d\" \"a\" \"e\" \"b\"})")
+        (example "Sort the list in reverse:" "(rsort {\"c\" \"d\" \"a\" \"e\" \"b\"})")
+        (example "Join two lists:" "(join {1 2 3 4 5} {6 7 8})")
+        (example "Alternate syntax to join lists:" "(+ {1 2 3} {4 5 6} {7 8 9})")
+
+        (title "Variables")
+        (example "Define a variable called 'name':" "(def {name} \"Ben\")")
+        (example "Print out the variable:" "(print name)")
+        (example "Change the value of 'name':" "(set {name} \"Bob\")")
+        (example "Print it again with formatting:" "(printf \"Hello, %\" name)")
+        (example "Define 3 variables:" "(def {a b c} 1 2 3)")
+        (example "Set 3 the value of variables:" "(set {a b c} 1 2 3)")
+        (example "Define a variable with a specified type:" "(def {name2:String} \"Ben\")")
+        (example "Setting it to something that isn't a string will cause an error:" "(set {name2} 12.1)")
+
+        (title "Dictionaries")
+        (example "Dictionaries can store keys and values:" "(def {d} (dict x:10 y:20))\n(printf \"x is %, y is %\" (d x) (d y))")
+        (example "You can add a value to a dictionary like this:" "(set-prop {d z} 30)\n(printf \"x is %, y is %, z is %\" (d x) (d y) (d z))")
+        (example "Or change an existing value:" "(set-prop {d x} 5)\n(printf \"x is %, y is %, z is %\" (d x) (d y) (d z))")
+
+        (title "Custom types")
+        (example "Custom types are like dictionaries with a fixed set of keys:" "(def-type {Point x y})\n(def {pnt} (Point x:10 y:20))")
+        (example "Type specifiers are optional but useful:" "(def-type {Point x:Float y:Float})\n; Throws an error:\n(def {pnt} (Point x:10 y:\"Hello\"))")
+
+        (title "Buffers")
+        (example "Buffers let you work with binary data:" "(def {b} (buffer-with-bytes 0x00 0x01 0x02))\n(printf \"Len is: %, Last byte is %\" (len b) (last b))")
+        (example "Read a specific byte:" "(get-byte b 1)")
+        (example "Returns a new buffer with the 2nd byte altered:" "(put-byte b 1 0xFF)")
+        (example "Returns a new buffer with the first two bytes altered:" "(put-unsigned-short b 0 0xFFFF)")
+        (example "Read the contents of a file into a buffer:" "(def {buf} (read-file \"/Users/ben/Desktop/myfile.txt\"))")
+        (example "Or write a buffer to a file:" "(write-file \"/Users/ben/Desktop/myfile.txt\" buf)")
+
+        (title "Functions and lambdas")
+        (example "Define a function called 'mul' that multiplies by 10, and call it:" "(fun {mul x} {* x 10})\n(mul 4)")
+        (example "You can specify a type for function arguments:\nIntegers and bytes will be automatically cast to float when called, but supplying a non-number argument will result in an error" "(fun {divide x:Float} {\ x 4})\n(divide 5) ; returns 1.25")
+        (example "Define a function with 3 arguments, and call it:" "(def {print-three x y z} {\n  printf \"1: %, 2: %, 3: %\" x y z\n})\n(print-three \"A\" \"B\" \"C\")")
+        (example "Define a function that takes a variable number of arguments, and call it:" "(def {myfunc & args} {\n  (printf \"% args\" (len args))\n  (printf \"first: %\" (first args))\n}\n(myfunc \"hello\" \"there\")}")
+        (example "Define a function with two required arguments that can optionally take extra arguments:" "(def {myfunc2 r1 r1 & opt} {\n  (printf \"Arg1: % Arg2: %\" r1 r2)\n  (printf \"Optional: %\" opt)\n}\n(myfunc2 \"hello\" \"there\" \"things\" \"stuff\")}")
+        (example "Lambda/anonymous function syntax for defining a function:" "(def {mul-ten} (lambda {x} {* x 10}))")
+        (example "Apply the above 'mul-ten' function to all items in the list:" "(map mul-ten {1 2 3 4 5})")
+        (example "Apply a lambda instead:" "(map (lambda {x} {/ x 2.0}) {1 2 3 4 5})")
+        (example "Get only the items > 2:" "(filter (lambda {x} {> x 2}) {1 2 3 4 5})")
+        (example "Add all the items together:" "(reduce + 0 {1 2 3 4 5})")
+        (example "Subtract all the items from 50:" "(reduce (lambda {acc x} {- acc x}) 50 {1 2 3 4 5})")
+
+        (title "Conditionals and flow control")
+        (example "Do something if x > 5:" "(def {x} 6)\n(if (> x 5)\n  {printf \"x is greater than 5\"}\n  {printf \"x is less than 5\"}\n)")
+        (example "Do something if x > 5 and y < 5:" "(fun {x y} {\n  if (and (> x 5) (< y 5))\n    {something}\n    {something-else}\n})")
+        (example "Do something if x or y (or both) is a dog:" "(fun {x y} {\n  if (or (== x \"dog\") (== y \"dog\"))\n    {something}\n    {something-else}\n})")
+        (example "Do something if x and y are both not cats:" "(fun {x y} {\n  if (not (== x \"cat\") (== y \"cat\"))\n    {something}\n    {something-else}\n})")
+        (example "You can use select to combine multiple if statements:" "(fun {x} {\n  select\n    {(> x -5) \"a\"}\n    {(> x 0) \"b\"}\n    {else \"c\"}\n})")
+        (example "Do a set of things and return the result of the last one:" "(do\n  (def {a} 5)\n  (def {b} 3)\n  (+ a b)\n)")
+        (example "Do something 10 times:" "(loop 10 (lambda {i} {\n  (print i)\n}))")
+
+        (title "Error handling")
+        (example "Some operations return errors:\nWhen an error is encountered, evaluation of the expression will stop." "(/ 10 0)")
+        (example "You can return errors from your own code like this:" "(fun do-work {x} {\n  if (== x nil)\n    {error \"Missing 'x'!\"}\n    {...}\n})\n")
+        (example "To handle errors in your code, use try + catch:" "(try (risky-func x y)\n  {printf \"It's actually fine.\"}\n  {catch e {printf \"Error: %\" e}}\n)")
+
+        (title "Misc")
+        (example "Comment your code:" "; WARNING: DO NOT USE\n(fun {danger arg} {\n  ; What are you doing??!\n  ...\n})")
+        (example "End excution and close your program:" "(exit)")
+        (example "End excution and close your program, returning an error code:" "(exit 1)")
+        (example "Get the total amount of CPU time benzl has used\n(Useful for profiling your code):" "(cpu-time-since 0)")
+        (example "Measure the amount of time something takes:" "(def {start} (cpu-time-since 0))\n(expensive-function args)\n(printf \"...took %ms\" (cpu-time-since start))")
+        (example "Same thing with less code:" "(profile (expensive-function args))")
+        (example "Get the size of the console:" "(printf\n  \"cols: % rows: %\"\n  (first (console-size))\n  (second (console-size))\n)")
+        (example "Get the arguments supplied when your program was run from the console:" "(print (launch-args))")
+
+        (printf "\n")
+    )
+})

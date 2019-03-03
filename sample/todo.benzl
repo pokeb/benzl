@@ -1,0 +1,154 @@
+#!/usr/local/bin/benzl
+
+; A simple to-do list app, designed to demonstrate basic benzl features
+; See -> https://github.com/pokeb/benzl
+;
+; HOW TO USE:
+;
+; Add an item to the list:
+; ./todo.benzl add Make coffee
+;
+; Show the items in the list:
+; ./todo.benzl
+;
+; Mark an item as completed:
+; ./todo.benzl complete 1
+;
+; Remove an item:
+; ./todo.benzl remove 1
+
+; Define a custom type for a to-do item
+; benzl has no boolean type so we'll use an integer with
+; 1 or 0 denoting done or not done
+(def-type {Item description:String done:Integer})
+
+; We will store our to-do items in this file
+(def {database} "todos.db")
+
+; This function calculates how many items aren't done yet
+(fun {count-things-to-do items:List} {
+    (reduce (lambda {acc item} {
+        if (not (item done))
+            {+ acc 1}
+            {acc}
+    }) 0 items)
+})
+
+; This function prints a friendly message
+; informing the user how much more they need to do
+(fun {print-summary items:List} {
+    (do
+        (def {things-left} (count-things-to-do items))
+        (if (> things-left 0)
+            {printf "You still have % things to do, get moving!" things-left}
+            {printf "You have no more things to do! Time for a nice nap."}
+        )
+    )
+})
+
+; Function to read the list of to-do items from disk
+; Items are stored as benzl source code
+; So when we read them back in, we just need to evaluate the text
+(fun {read-todos} {
+    (try
+        ; Read the contents of the file, convert to a string
+        ; Then evaluate the string as benzl code
+        {eval-string (to-string (read-file database))}
+        ; In case of an error (most likely the file doesn't exist)
+        ; Set the list of items to an empty list
+        {catch e {list}}
+    )
+})
+
+; Function to write the list of to-do items to disk
+(fun {write-todos items:List} {
+    (try
+        {write-file database (to-string items)}
+        {catch e {printf "Failed to write todos!"}}
+    )
+})
+
+; Read the todo list from disk (if one exists)
+(def {todos} (read-todos))
+
+; Function for adding an item to the todo list
+(fun {add-item name:String} {
+    (do
+        (set {todos} (join todos (Item description:name done:false)))
+        (write-todos todos)
+        (printf "Added item '%'" name)
+        (print-summary todos)
+    )
+})
+
+; Function for removing an item from the todo list
+(fun {remove-item index:Integer} {
+    if (and (< index (len todos)) (> index -1))
+        {do
+            ; Get the nth item from the list of to-dos
+            (def {item} (nth index todos))
+
+            ; Remove it from the list
+            (set {todos} (splice index 1 nil todos))
+
+            ; Write the updated list to disk
+            (write-todos todos)
+
+            (printf "Removed item '%'" (item description))
+            (print-summary todos)
+        }
+        {printf "Invalid item to remove: %" (+ index 1)}
+})
+
+; Function for completing an item in the todo list
+(fun {complete-item index:Integer} {
+    if (and (< index (len todos)) (> index -1))
+        {do
+            ; Get the item from the list, and set its done property to true
+            (def {item} (set-prop {(nth index todos) done} true))
+
+            ; Update the list with the modified item
+            (set {todos} (splice index 1 item todos))
+
+            ; Write the updated list to disk
+            (write-todos todos)
+
+            (printf "Item '%' completed!" (item description))
+            (print-summary todos)
+        }
+        {printf "Invalid item to complete: %" (+ index 1)}
+})
+
+; Function to list all todo items
+(fun {list-dodos} {
+    if (len todos)
+        {map-with-iterator (lambda {item index} {
+            (printf "% [%] %" (+ index 1) (if (item done) {"✔︎"} {" "}) (item description))
+        }) todos}
+        {printf "Nothing to do!"}
+})
+
+
+; Parse the launch arguments to decide what the user wants
+(if (< (len launch-args) 2)
+
+    ; If we got less than 2 arguments, show the list of actions
+    {list-dodos}
+
+    ; Otherwise, the first argument should be the action
+    {case (first launch-args)
+
+        ; Add an item to the list
+        ; Items can be added like ./todo.benl add "Walk the dog"
+        ; or ./todo.benl add Walk the dog
+        ; To handle the second case, we concatenate args 2-4 with a space in between each,
+        ; then trim the trailing space
+        {"add" (add-item (trim (reduce (lambda {acc x} {+ acc x " "}) "" (tail launch-args))))}
+
+        ; Remove an item from the list
+        {"remove" (remove-item (- (to-number (second launch-args)) 1))}
+
+        ; Mark an item as done
+        {"complete" (complete-item (- (to-number (second launch-args)) 1))}
+    }
+)

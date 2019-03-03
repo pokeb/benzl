@@ -1,0 +1,45 @@
+; A simple module that defines Point, Size, Rectangle and Circle types
+; and some helpful functions for working with them
+;
+; Part of benzl -> https://github.com/pokeb/benzl
+
+; Defines a custom type for a point in 2d space
+(def-type {Point x:Float y:Float})
+
+; Scales a point by the passed scale factor
+(fun {scale-point pnt:Point scale:Float} {
+    (Point x:(* (pnt x) scale) y:(* (pnt y) scale))
+})
+
+; Trigonometry helper function
+(fun {squared-distance-between-points p1:Point p2:Point} {
+    (do
+        (def {dx} (- (p1 x) (p2 x)))
+        (def {dy} (- (p1 y) (p2 y)))
+        (+ (square dx) (square dy))
+    )
+});
+
+; Defines a custom type representing a 2d size
+(def-type {Size width:Float height:Float})
+
+; Defines a custom type representing a rectangle
+(def-type {Rectangle origin:Point size:Size})
+
+; Returns true if the rectangle contains the point
+(fun {rectangle-contains-point r:Rectangle p:Point} {
+    (and
+        (>= (p x) ((r origin) x))
+        (>= (p y) ((r origin) y))
+        (< (p x) (+ ((r origin) x) ((r size) width)))
+        (< (p y) (+ ((r origin) y) ((r size) height)))
+    )
+})
+
+; Defines a custom type representing a circle
+(def-type {Circle center:Point radius:Float})
+
+; Defines a function for determining if the circle contains a point
+(fun {circle-contains-point c:Circle p:Point} {
+    (< (squared-distance-between-points p (c center)) (square (c radius)))
+})
